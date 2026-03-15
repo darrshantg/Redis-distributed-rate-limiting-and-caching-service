@@ -36,7 +36,7 @@ async function slidingWindow(userId, tenantId, policy) {
 
   // retryAfter = how long until oldest entry falls off the window
   // oldest entry expires at: oldestTs + windowMs
-  // user needs to wait:       (oldestTs + windowMs) - now
+  // user needs to wait:       (oldestTs + windowMs) - now 
   const retryAfter = allowed === 0 ? Math.ceil((oldestTs + windowMs - now) / 1000) : null;
 
   return {
