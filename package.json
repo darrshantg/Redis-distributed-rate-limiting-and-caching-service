@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
-    "ioredis": "^5.9.3"
+    "ioredis": "^5.9.3",
+    "pg": "^8.20.0"
   }
 }

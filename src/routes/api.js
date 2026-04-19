@@ -1,26 +1,42 @@
 const express = require("express");
 const router = express.Router();
+const { Pool } = require("pg")
 const { cacheAside, writeThrough, invalidateAll } = require('../services/cache')
 const { mgetUsers, warmCache, getCacheStats } = require("../services/pipeline");
 
-// ---- Fake database ----------------------------------
-// Simulates a slow DB with a 200ms delay
-const fakeDb = {
-  users: {
-    user_1: { id: "user_1", name: "Alice",   role: "admin" },
-    user_2: { id: "user_2", name: "Bob",     role: "user"  },
-    user_3: { id: "user_3", name: "Charlie", role: "user"  },
-  },
+// ---- PostgreSQL connection -----
+const pool = new Pool({
+  host:     process.env.DB_HOST,
+  port:     process.env.DB_PORT     || 5432,
+  database: process.env.DB_NAME     || "ratelimiter",
+  user:     process.env.DB_USER     || "postgres",
+  password: process.env.DB_PASSWORD,
+  max:      10,          // connection pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
+
+// ---- DB Helper ----
+const db = {
   async get(id) {
-    await new Promise(r => setTimeout(r, 200)); // simulate DB latency
-    return this.users[id] || null;
+    const result = await pool.query(
+      "SELECT id, name, role FROM users WHERE id = $1",
+      [id]
+    );
+    return result.rows[0] || null;
   },
 
   async save(id, data) {
-    await new Promise(r => setTimeout(r, 200));
-    this.users[id] = { id, ...data };
-    return this.users[id];
+    const result = await pool.query(
+      `INSERT INTO users (id, name, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO UPDATE
+       SET name = $2, role = $3
+       RETURNING *`,
+      [id, data.name, data.role]
+    );
+    return result.rows[0];
   }
 };
 
@@ -33,7 +49,7 @@ router.get("/users/:id", async (req, res) => {
     const result = await cacheAside(
       "users",                          // resource name
       id,                               // resource id
-      () => fakeDb.get(id),             // how to fetch from DB on miss
+      () => db.get(id),             // how to fetch from DB on miss
       30                                // TTL in seconds
     );
 
@@ -60,7 +76,7 @@ router.put("/users/:id", async (req, res) => {
       "users",                              // resource name
       id,                                   // resource id
       updates,                              // data to write
-      (data) => fakeDb.save(id, data),      // how to write to DB
+      (data) => db.save(id, data),      // how to write to DB
       30                                    // TTL in seconds
     );
 
@@ -96,7 +112,7 @@ router.get("/users", async (req, res) => {
   const misses = results.filter(r => !r.data);
 
   for (const miss of misses) {
-    const data = await fakeDb.get(miss.id);
+    const data = await db.get(miss.id);
     if (data) {
       const key = `cache:users:v${version}:${miss.id}`;
       const jitter = Math.floor(Math.random() * 10);
@@ -127,7 +143,7 @@ router.post("/cache/warm", async (req, res) => {
   // Fetch all from DB
   const entries = [];
   for (const id of ids) {
-    const data = await fakeDb.get(id);
+    const data = await db.get(id);
     if (data) {
       entries.push({ key: `cache:users:v${version}:${id}`, data });
     }
