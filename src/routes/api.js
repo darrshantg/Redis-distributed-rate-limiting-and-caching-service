@@ -11,6 +11,7 @@ const pool = new Pool({
   database: process.env.DB_NAME     || "ratelimiter",
   user:     process.env.DB_USER     || "postgres",
   password: process.env.DB_PASSWORD,
+  ssl: { rejectUnauthorized: false },
   max:      10,          // connection pool size
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
